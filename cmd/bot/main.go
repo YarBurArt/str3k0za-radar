@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"golang.org/x/net/proxy"
+
+	"github.com/yarburart/str3k0za-radar/internal/handler"
 )
 
 // test bot echo
@@ -35,7 +36,6 @@ func main() {
 
 	// WithHTTPClient for proxy in censored countries
 	opts := []bot.Option{
-		bot.WithDefaultHandler(handler),
 		bot.WithHTTPClient(15*time.Second, httpClient),
 	}
 	botToken := os.Getenv("BOT_TOKEN")
@@ -46,17 +46,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	router := handler.NewRouter(b)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypeExact, router.EchoFallback)
 
 	b.Start(ctx)
-}
-
-// handle any message , response same text to source chatid
-func handler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   update.Message.Text,
-	})
-	if err != nil {
-		log.Printf("failed to send message: %v", err)
-	}
 }
