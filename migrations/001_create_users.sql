@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_id BIGINT NOT NULL UNIQUE,
+    username TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
