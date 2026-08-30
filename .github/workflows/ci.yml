@@ -1,0 +1,80 @@
+name: Go CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Run tests with race cond checks
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+  lint-with-sec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=3m
+
+  sqlc-codegen-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+        
+      - name: Generate sqlc code
+        run: sqlc generate
+        
+      - name: Verify generated code matches committed code
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Please run 'sqlc generate' locally and commit the updated files"
+            git diff
+            exit 1
+          fi
+
+  semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Semgrep Analysis
+        uses: returntocorp/semgrep-action@v1
+        continue-on-error: true  # gosec already in pre-commit
+        with:
+          config: p/golang
+          extra_args: --metrics=off

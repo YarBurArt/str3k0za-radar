@@ -1,0 +1,7 @@
+# ignore codegen
+internal/infrastructure/postgres/*.sql.go
+
+.git/
+
+migrations/
+queries/
