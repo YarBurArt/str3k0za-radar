@@ -28,10 +28,11 @@ func (r *Router) Start(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 	text := "Bot is started.\n\n" +
 		"Available commands:\n" +
-		"- /enable-digest  : enable daily digest\n" +
-		"- /disable-digest : disable daily digest\n" +
+		"- /enable  : enable daily digest\n" +
+		"- /disable : disable daily digest\n" +
 		"- /settime HH:MM  : set delivery time (like /settime 14:30)\n" +
-		"- /digest : Generate report manually with random TTP, CWE and latest CVE. This based on DFIR reports."
+		"- /digest : Generate report manually with random TTP, CWE and latest CVE. This based on DFIR reports.\n" +
+		"- /help | /start : just this message"
 
 	newUser, err := r.userService.NewUserAutoReg(ctx, update.Message.Chat.ID, update.Message.From.Username)
 	if err != nil {

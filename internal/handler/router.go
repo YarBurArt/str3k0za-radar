@@ -33,8 +33,8 @@ func NewRouter(b *bot.Bot, userService *application.UserService) *Router {
 	}
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, r.Start)
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/digest", bot.MatchTypeExact, r.Digest)
-	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/enable-digest", bot.MatchTypeExact, r.EnableDigest)
-	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/disable-digest", bot.MatchTypeExact, r.DisableDigest)
+	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/enable", bot.MatchTypeExact, r.EnableDigest)
+	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/disable", bot.MatchTypeExact, r.DisableDigest)
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/settime", bot.MatchTypePrefix, r.SetTime)
 
 	r.bot.RegisterHandler(bot.HandlerTypeCallbackQueryData, "apt:", bot.MatchTypePrefix, r.APTCallback)
