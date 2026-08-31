@@ -176,6 +176,8 @@ func (l *Loader) normalizeCountry(countries []string) string {
 		"china": "CN", "russia": "RU", "iran": "IR", "north korea": "KP",
 		"south korea": "KR", "united states": "US", "israel": "IL",
 		"pakistan": "PK", "india": "IN", "vietnam": "VN", "turkey": "TR",
+		"belgium": "BE", "colombia": "CO", "lebanon": "LB",
+		"romania": "RO", "united kingdom": "GB",
 	}
 
 	if code, ok := mapping[c]; ok {
