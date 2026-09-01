@@ -54,6 +54,8 @@ func newCWEReader(r io.Reader) *csv.Reader {
 	csvReader.LazyQuotes = true
 	// prevent allocating new string slices per row
 	csvReader.ReuseRecord = true
+	// variable number of fields per record, just why mitre...
+	csvReader.FieldsPerRecord = -1
 	return csvReader
 }
 

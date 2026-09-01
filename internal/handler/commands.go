@@ -56,9 +56,11 @@ func (r *Router) Digest(ctx context.Context, b *bot.Bot, update *models.Update) 
 		return
 	}
 
-	// TODO: inject digest service
-	text := "sorry bro, not implemented"
-
+	text, err := r.digestService.GenerateDigestMessage(ctx, update.Message.Chat.ID)
+	if err != nil {
+		log.Printf("failed to generate /digest for user %d : %v", update.Message.Chat.ID, err)
+		text = "Sorry, some error in generating digest.\n Devs don't even know about that :) "
+	}
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
 		Text:   text,

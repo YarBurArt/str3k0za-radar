@@ -19,17 +19,19 @@ type UserUIState struct {
 type Router struct {
 	bot *bot.Bot
 	// TODO: connect generate digest service
-	userService *application.UserService
+	userService   *application.UserService
+	digestService *application.DigestService
 	// state before save per user, without concurrent map writes
 	mu      sync.Mutex
 	uiState map[int64]*UserUIState
 }
 
-func NewRouter(b *bot.Bot, userService *application.UserService) *Router {
+func NewRouter(b *bot.Bot, userService *application.UserService, digestService *application.DigestService) *Router {
 	r := &Router{
-		bot:         b,
-		uiState:     make(map[int64]*UserUIState),
-		userService: userService,
+		bot:           b,
+		uiState:       make(map[int64]*UserUIState),
+		userService:   userService,
+		digestService: digestService,
 	}
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, r.Start)
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/digest", bot.MatchTypeExact, r.Digest)

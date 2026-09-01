@@ -15,6 +15,7 @@ import (
 
 	"github.com/yarburart/str3k0za-radar/internal/application"
 	"github.com/yarburart/str3k0za-radar/internal/handler"
+	"github.com/yarburart/str3k0za-radar/internal/infrastructure/cwe"
 	"github.com/yarburart/str3k0za-radar/internal/infrastructure/mitre"
 	"github.com/yarburart/str3k0za-radar/internal/infrastructure/postgres"
 )
@@ -67,9 +68,14 @@ func main() {
 		log.Fatalf("failed to load attack graph: %v", err)
 	}
 	log.Printf("Attack graph loaded: %d APTs, %d TTPs", len(attackGraph.APTs), len(attackGraph.TTPs))
+	_, cweData, err := cwe.LoadCWEdata("data/cwe-1000.csv")
+	if err != nil {
+		log.Fatalf("failed to load cwe dataset: %v", err)
+	}
 
 	userProfileService := application.NewUserService(userRepo, attackGraph)
-	router := handler.NewRouter(b, userProfileService)
+	digestGenService := application.NewDigestService(userRepo, attackGraph, cweData)
+	router := handler.NewRouter(b, userProfileService, digestGenService)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypeExact, router.EchoFallback)
 
 	b.Start(ctx)
