@@ -17,9 +17,7 @@ type DigestService struct {
 	userRepo *postgres.UserRepository
 	graph    *domain.AttackGraph
 	cweData  []domain.CWE
-
-	// contiguous memory layout for TTPs to avoid pointer chasing
-	ttpList  []domain.TTP
+	ttpList  []*domain.TTP
 	aptToTTP map[string][]int // for lookup, instead graph
 }
 
@@ -31,7 +29,7 @@ func NewDigestService(userRepo *postgres.UserRepository, graph *domain.AttackGra
 	}
 
 	if graph != nil {
-		d.ttpList = make([]domain.TTP, 0, len(graph.TTPs))
+		d.ttpList = make([]*domain.TTP, 0, len(graph.TTPs))
 		aptToTTPMap := make(map[string][]int)
 
 		// for deterministic order, less duplication
@@ -49,7 +47,7 @@ func NewDigestService(userRepo *postgres.UserRepository, graph *domain.AttackGra
 
 			idx := len(d.ttpList)
 			// dereference and copy to value slice for contiguous memory
-			d.ttpList = append(d.ttpList, *ttpPtr)
+			d.ttpList = append(d.ttpList, ttpPtr)
 
 			for _, aptID := range ttpPtr.RelatedAPTIDs {
 				aptToTTPMap[aptID] = append(aptToTTPMap[aptID], idx)
@@ -160,7 +158,7 @@ func (d *DigestService) getRandomTTP(aptFilter []string) (*domain.TTP, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &d.ttpList[idx], nil
+		return d.ttpList[idx], nil
 	}
 
 	// stack allocated slice to collect candidate indices, cuz sort.Ints take concrete []int
@@ -177,7 +175,7 @@ func (d *DigestService) getRandomTTP(aptFilter []string) (*domain.TTP, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &d.ttpList[idx], nil
+		return d.ttpList[idx], nil
 	}
 
 	// sort and deduplicate TTP, cuz many APTs use the same TTPs
@@ -196,5 +194,5 @@ func (d *DigestService) getRandomTTP(aptFilter []string) (*domain.TTP, error) {
 		return nil, err
 	}
 	chosenIdx := candidates[idx]
-	return &d.ttpList[chosenIdx], nil
+	return d.ttpList[chosenIdx], nil
 }

@@ -36,26 +36,30 @@ func NewLoader(mitreFilePath, thgCardsFilePath string) *Loader {
 	}
 }
 
-type stixBundle struct {
-	Objects []json.RawMessage `json:"objects"`
-}
-
-type baseObject struct {
-	Type             string            `json:"type"`
-	ID               string            `json:"id"`
-	Name             string            `json:"name"`
-	Description      string            `json:"description"`
-	Aliases          []string          `json:"aliases"`
-	SourceRef        string            `json:"source_ref"`
-	TargetRef        string            `json:"target_ref"`
-	RelationshipType string            `json:"relationship_type"`
-	ExternalRefs     []stixExternalRef `json:"external_references"`
-}
-
 type stixExternalRef struct {
 	SourceName string `json:"source_name"`
 	ExternalID string `json:"external_id"`
 	URL        string `json:"url"`
+}
+
+type intrusionSetObject struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Aliases      []string          `json:"aliases"`
+	ExternalRefs []stixExternalRef `json:"external_references"`
+}
+
+type attackPatternObject struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
+	ExternalRefs []stixExternalRef `json:"external_references"`
+}
+
+type relObject struct {
+	SourceRef        string `json:"source_ref"`
+	TargetRef        string `json:"target_ref"`
+	RelationshipType string `json:"relationship_type"`
 }
 
 // check docs here for mitre format: https://attack.mitre.org/resources/attack-data-and-tools/
@@ -66,14 +70,26 @@ func (l *Loader) Load() (*domain.AttackGraph, error) {
 		log.Printf("Warning: %v", err)
 	}
 
-	data, err := os.ReadFile(l.mitreFilePath)
+	file, err := os.Open(l.mitreFilePath) // to partial read
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
-	var bundle stixBundle
-	if err := json.Unmarshal(data, &bundle); err != nil {
-		return nil, err
+	// stream until objects key
+	dec := json.NewDecoder(file)
+	for {
+		t, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		if key, ok := t.(string); ok && key == "objects" {
+			break
+		}
+	}
+
+	if t, err := dec.Token(); err != nil || t != json.Delim('[') {
+		return nil, fmt.Errorf("expected TTP [ after objects key")
 	}
 
 	graph := &domain.AttackGraph{
@@ -89,32 +105,49 @@ func (l *Loader) Load() (*domain.AttackGraph, error) {
 	}
 	var rels []rel
 
-	for _, raw := range bundle.Objects {
-		var obj baseObject
-		if err := json.Unmarshal(raw, &obj); err != nil {
+	for dec.More() {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return nil, err
+		}
+
+		// to check type
+		var probe struct {
+			Type string `json:"type"`
+			ID   string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &probe); err != nil {
 			continue
 		}
 
-		switch obj.Type {
+		switch probe.Type {
 		case "intrusion-set":
-			apt := l.parseAPT(obj)
-			if apt.MitreID != "" {
-				graph.APTs[apt.MitreID] = apt
-				stixToAPT[obj.ID] = apt.MitreID
+			var obj intrusionSetObject
+			if err := json.Unmarshal(raw, &obj); err == nil {
+				apt := l.parseAPT(obj)
+				if apt.MitreID != "" {
+					graph.APTs[apt.MitreID] = apt
+					stixToAPT[obj.ID] = apt.MitreID
+				}
 			}
 		case "attack-pattern":
-			ttp := l.parseTTP(obj)
-			if ttp.MitreID != "" {
-				graph.TTPs[ttp.MitreID] = ttp
-				stixToTTP[obj.ID] = ttp.MitreID
+			var obj attackPatternObject
+			if err := json.Unmarshal(raw, &obj); err == nil {
+				ttp := l.parseTTP(obj)
+				if ttp.MitreID != "" {
+					graph.TTPs[ttp.MitreID] = ttp
+					stixToTTP[obj.ID] = ttp.MitreID
+				}
 			}
 		case "relationship":
-			if obj.RelationshipType == "uses" {
-				rels = append(rels, rel{obj.SourceRef, obj.TargetRef})
+			var obj relObject // skip descriptions
+			if err := json.Unmarshal(raw, &obj); err == nil {
+				if obj.RelationshipType == "uses" {
+					rels = append(rels, rel{obj.SourceRef, obj.TargetRef})
+				}
 			}
 		}
 	}
-
 	for _, r := range rels {
 		aptID, ok1 := stixToAPT[r.source]
 		ttpID, ok2 := stixToTTP[r.target]
@@ -191,7 +224,7 @@ func (l *Loader) normalizeCountry(countries []string) string {
 	return "UNKNOWN"
 }
 
-func (l *Loader) parseAPT(obj baseObject) *domain.APT {
+func (l *Loader) parseAPT(obj intrusionSetObject) *domain.APT {
 	return &domain.APT{
 		MitreID:       l.extractMitreID(obj.ExternalRefs),
 		StixID:        obj.ID,
@@ -201,7 +234,7 @@ func (l *Loader) parseAPT(obj baseObject) *domain.APT {
 	}
 }
 
-func (l *Loader) parseTTP(obj baseObject) *domain.TTP {
+func (l *Loader) parseTTP(obj attackPatternObject) *domain.TTP {
 	refs := make([]string, 0, len(obj.ExternalRefs))
 	for _, ref := range obj.ExternalRefs {
 		if ref.URL != "" {
