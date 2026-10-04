@@ -129,14 +129,24 @@ func TestListUsersForDeliveryWholeMinute(t *testing.T) {
 	ctx := context.Background()
 
 	seedUser(t, repo, 1, true, nil)
-	now := dbNowMinute(t, repo)
-	if err := repo.UpdateDigestSettings(ctx, 1, nil, &now); err != nil {
-		t.Fatalf("set delivery time: %v", err)
+	seed := func() domain.TimeOfDay {
+		t.Helper()
+		m := dbNowMinute(t, repo)
+		if err := repo.UpdateDigestSettings(ctx, 1, nil, &m); err != nil {
+			t.Fatalf("set delivery time: %v", err)
+		}
+		return m
 	}
 
+	cur := seed()
 	const samples = 20
 	hits := 0
 	for i := range samples {
+		// a rollover moves the window past the seeded value, so re-seed
+		if m := dbNowMinute(t, repo); m != cur {
+			cur = seed()
+		}
+
 		targets, err := repo.ListUsersForDelivery(ctx)
 		if err != nil {
 			t.Fatalf("sample %d: %v", i, err)

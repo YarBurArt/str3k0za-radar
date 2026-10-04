@@ -11,6 +11,7 @@ import (
 
 	"github.com/yarburart/str3k0za-radar/internal/domain"
 	"github.com/yarburart/str3k0za-radar/internal/infrastructure/postgres"
+	tg "github.com/yarburart/str3k0za-radar/internal/infrastructure/telegram"
 )
 
 type DigestService struct {
@@ -81,8 +82,8 @@ func (d *DigestService) GenerateDigest(ctx context.Context, telegramID int64) (d
 	}, nil
 }
 
-// just digest into string, for ready tg message
-func (d *DigestService) GenerateDigestMessage(ctx context.Context, telegramID int64) (string, error) {
+// html cuz md needs 18 escapes per message and the dataset has both link kinds
+func (d *DigestService) GenerateDigestHTML(ctx context.Context, telegramID int64) (string, error) {
 	digest, err := d.GenerateDigest(ctx, telegramID)
 	if err != nil {
 		return "", err
@@ -90,32 +91,32 @@ func (d *DigestService) GenerateDigestMessage(ctx context.Context, telegramID in
 
 	var b strings.Builder
 	// avoid some dynamic resizing and reallocations
-	b.Grow(512)
+	b.Grow(1024)
 
-	b.WriteString("Daily Threat Digest\n\n")
-	b.WriteString(fmt.Sprintf("CWE-%d: %s\n", digest.CWERand.ID, digest.CWERand.Name))
+	b.WriteString("<b>Daily Threat Digest</b>\n\n")
+	b.WriteString(fmt.Sprintf("<b>CWE-%d:</b> %s\n", digest.CWERand.ID, tg.EscapeHTML(digest.CWERand.Name)))
 	if digest.CWERand.Description != "" {
-		b.WriteString(fmt.Sprintf("  %s\n", digest.CWERand.Description))
+		b.WriteString("  " + tg.FormatDigestHTML(digest.CWERand.Description) + "\n")
 	}
 	b.WriteString("\n")
 
-	b.WriteString("TTP:\n")
-	b.WriteString(fmt.Sprintf("%s: %s\n", digest.TTPRand.MitreID, digest.TTPRand.Name))
+	b.WriteString("<b>TTP:</b>\n")
+	b.WriteString(fmt.Sprintf("%s: %s\n", digest.TTPRand.MitreID, tg.EscapeHTML(digest.TTPRand.Name)))
 	if digest.TTPRand.Description != "" {
-		b.WriteString(fmt.Sprintf("  %s\n", digest.TTPRand.Description))
+		b.WriteString("  " + tg.FormatDigestHTML(digest.TTPRand.Description) + "\n")
 	}
 	b.WriteString("\n")
 
-	b.WriteString("Related APT Groups:\n")
+	b.WriteString("<b>Related APT Groups:</b>\n")
 	if len(digest.TTPRand.RelatedAPTIDs) > 0 {
 		for i, aptID := range digest.TTPRand.RelatedAPTIDs {
 			if i > 0 {
 				b.WriteString(", ")
 			}
 			if apt, ok := d.graph.APTs[aptID]; ok {
-				b.WriteString(fmt.Sprintf("%s (%s)", apt.Name, apt.MitreID))
+				b.WriteString(fmt.Sprintf("%s (%s)", tg.EscapeHTML(apt.Name), apt.MitreID))
 			} else {
-				b.WriteString(aptID)
+				b.WriteString(tg.EscapeHTML(aptID))
 			}
 		}
 		b.WriteString("\n")

@@ -12,6 +12,33 @@ import (
 	"github.com/yarburart/str3k0za-radar/internal/domain"
 )
 
+const helpText = "Bot is started.\n\n" +
+	"Available commands:\n" +
+	"- /enable  : enable the daily digest\n" +
+	"- /disable : disable the daily digest\n" +
+	"- /settime HH:MM  : set the delivery time (like /settime 18:30)\n" +
+	"- /digest : generate a report right now, same content as the daily one\n" +
+	"- /help : this message\n\n" +
+	"Times are UTC. /settime 18:30 means 18:30 UTC, whatever timezone you are in."
+
+func (r *Router) Help(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.Message == nil {
+		return
+	}
+	r.sendHelp(ctx, b, update.Message.Chat.ID, nil)
+}
+
+func (r *Router) sendHelp(ctx context.Context, b *bot.Bot, chatID int64, keyboard models.ReplyMarkup) {
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        helpText,
+		ReplyMarkup: keyboard,
+	})
+	if err != nil {
+		log.Printf("failed to send help to %d: %v", chatID, err)
+	}
+}
+
 func (r *Router) Start(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if update.Message == nil {
 		return
@@ -26,14 +53,6 @@ func (r *Router) Start(ctx context.Context, b *bot.Bot, update *models.Update) {
 		},
 	}
 
-	text := "Bot is started.\n\n" +
-		"Available commands:\n" +
-		"- /enable  : enable daily digest\n" +
-		"- /disable : disable daily digest\n" +
-		"- /settime HH:MM  : set delivery time (like /settime 14:30)\n" +
-		"- /digest : Generate report manually with random TTP, CWE and latest CVE. This based on DFIR reports.\n" +
-		"- /help | /start : just this message"
-
 	newUser, err := r.userService.NewUserAutoReg(ctx, update.Message.Chat.ID, update.Message.From.Username)
 	if err != nil {
 		log.Printf("user register error: %v", err)
@@ -41,14 +60,7 @@ func (r *Router) Start(ctx context.Context, b *bot.Bot, update *models.Update) {
 		log.Printf("User registered/loaded with ID: %d", newUser.ID)
 	}
 
-	_, err = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      update.Message.Chat.ID,
-		Text:        text,
-		ReplyMarkup: keyboard,
-	})
-	if err != nil {
-		log.Printf("failed to send message to %d: %v", update.Message.Chat.ID, err)
-	}
+	r.sendHelp(ctx, b, update.Message.Chat.ID, keyboard)
 }
 
 func (r *Router) Digest(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -56,14 +68,19 @@ func (r *Router) Digest(ctx context.Context, b *bot.Bot, update *models.Update) 
 		return
 	}
 
-	text, err := r.digestService.GenerateDigestMessage(ctx, update.Message.Chat.ID)
+	text, err := r.digestService.GenerateDigestHTML(ctx, update.Message.Chat.ID)
 	if err != nil {
 		log.Printf("failed to generate /digest for user %d : %v", update.Message.Chat.ID, err)
-		text = "Sorry, some error in generating digest.\n Devs don't even know about that :) "
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "Sorry, some error in generating digest.\n Devs don't even know about that :) ",
+		})
+		return
 	}
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   text,
+		ChatID:    update.Message.Chat.ID,
+		Text:      text,
+		ParseMode: models.ParseModeHTML,
 	})
 }
 
@@ -78,7 +95,8 @@ func (r *Router) EnableDigest(ctx context.Context, b *bot.Bot, update *models.Up
 	if err != nil {
 		log.Printf("enable digest error: %v", err)
 	} else {
-		msg = fmt.Sprintf("Daily digest enabled on %02d:%02d. Change with /settime HH:MM", deliveryTime.Hour, deliveryTime.Minute)
+		msg = fmt.Sprintf("Daily digest enabled, it will arrive at %02d:%02d UTC. Change with /settime HH:MM",
+			deliveryTime.Hour, deliveryTime.Minute)
 	}
 
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -116,7 +134,7 @@ func (r *Router) SetTime(ctx context.Context, b *bot.Bot, update *models.Update)
 	if len(parts) != 2 {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
-			Text:   "Usage: /settime HH:MM (like /settime 14:30)",
+			Text:   "Usage: /settime HH:MM in UTC (like /settime 18:30)",
 		})
 		return
 	}
@@ -161,6 +179,6 @@ func (r *Router) SetTime(ctx context.Context, b *bot.Bot, update *models.Update)
 
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("Delivery time set to %02d:%02d", deliveryTime.Hour, deliveryTime.Minute),
+		Text:   fmt.Sprintf("Delivery time set to %02d:%02d UTC", deliveryTime.Hour, deliveryTime.Minute),
 	})
 }

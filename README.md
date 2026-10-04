@@ -100,7 +100,7 @@ Check what is pending without applying anything with `river migrate-up --databas
 
 ### dev tests
 
-The repository tests need a throwaway database and are skipped when it is not configured, so the name must contain `test`, cuz the fixtures truncate the tables.
+The repository tests need a throwaway database and are skipped when it is not configured, so the name must contain `test`, cuz the fixtures truncate the tables. Run them with `-p 1`, since the fixtures share one database and parallel packages would truncate each other.
 
 ```bash
 createdb radar_test
@@ -108,7 +108,7 @@ psql "$TEST_DATABASE_URL" -f migrations/001_create_users.sql
 psql "$TEST_DATABASE_URL" -f migrations/002_create_preferences.sql
 psql "$TEST_DATABASE_URL" -f migrations/003_digest_disabled_by_default.sql
 
-TEST_DATABASE_URL="postgresql://user:pass@localhost:5432/radar_test" go test -race ./...
+TEST_DATABASE_URL="postgresql://user:pass@localhost:5432/radar_test" go test -race -p 1 ./...
 ```
 
 ## Docs for used libs

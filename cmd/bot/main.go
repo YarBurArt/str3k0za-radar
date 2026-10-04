@@ -6,8 +6,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/go-telegram/bot"
-
 	"github.com/yarburart/str3k0za-radar/internal/application"
 	"github.com/yarburart/str3k0za-radar/internal/bootstrap"
 	"github.com/yarburart/str3k0za-radar/internal/handler"
@@ -35,12 +33,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	router := handler.NewRouter(
+	// value is not needed here cuz startup process
+	handler.NewRouter(
 		b,
 		application.NewUserService(userRepo, attackGraph),
 		application.NewDigestService(userRepo, attackGraph, cweData),
 	)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypeExact, router.EchoFallback)
-
 	b.Start(ctx)
 }

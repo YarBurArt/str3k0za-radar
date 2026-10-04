@@ -147,15 +147,23 @@ func (s *UserService) UpdateDigestSettings(ctx context.Context, telegramID int64
 	}
 
 	effective := user.Prefs.DeliveryTime
+	hasTime := user.Prefs.HasDeliveryTime
 	switch {
 	case deliveryTime != nil:
-		effective = *deliveryTime
-	case *enabled && !user.Prefs.HasDeliveryTime:
-		// otherwise never be scheduled
-		effective = domain.DefaultDeliveryTime()
+		effective, hasTime = *deliveryTime, true
+	case enabled != nil && *enabled && !hasTime:
+		// enabling without a time would otherwise never be scheduled
+		effective, hasTime = domain.DefaultDeliveryTime(), true
 	}
 
-	if err := s.userRepo.UpdateDigestSettings(ctx, telegramID, enabled, &effective); err != nil {
+	// a nil pointer keeps delivery_time NULL, so disabling a user who never picked
+	// a time does not invent 00:00 and make it look deliberate later
+	var timeArg *domain.TimeOfDay
+	if hasTime {
+		timeArg = &effective
+	}
+
+	if err := s.userRepo.UpdateDigestSettings(ctx, telegramID, enabled, timeArg); err != nil {
 		return domain.TimeOfDay{}, err
 	}
 	return effective, nil

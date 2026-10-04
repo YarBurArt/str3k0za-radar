@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"context"
 	"sync"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/yarburart/str3k0za-radar/internal/application"
 )
 
@@ -38,6 +36,7 @@ func NewRouter(b *bot.Bot, userService *application.UserService, digestService *
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/enable", bot.MatchTypeExact, r.EnableDigest)
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/disable", bot.MatchTypeExact, r.DisableDigest)
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/settime", bot.MatchTypePrefix, r.SetTime)
+	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypeExact, r.Help)
 
 	r.bot.RegisterHandler(bot.HandlerTypeCallbackQueryData, "apt:", bot.MatchTypePrefix, r.APTCallback)
 	r.bot.RegisterHandler(bot.HandlerTypeCallbackQueryData, "country:", bot.MatchTypePrefix, r.APTSourceCountryCallback)
@@ -67,14 +66,4 @@ func (r *Router) clearState(chatID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.uiState, chatID)
-}
-
-func (r *Router) EchoFallback(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
-	}
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "command not found",
-	})
 }

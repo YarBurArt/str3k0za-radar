@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/riverqueue/river"
 
 	"github.com/yarburart/str3k0za-radar/internal/application"
@@ -58,14 +59,15 @@ func (w *SendDigestWorker) Work(ctx context.Context, job *river.Job[SendDigestAr
 		return nil
 	}
 
-	text, err := w.digestService.GenerateDigestMessage(ctx, telegramID)
+	text, err := w.digestService.GenerateDigestHTML(ctx, telegramID)
 	if err != nil {
 		return fmt.Errorf("generate digest for user %d: %w", telegramID, err)
 	}
 
 	_, err = w.bot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: telegramID,
-		Text:   text,
+		ChatID:    telegramID,
+		Text:      text,
+		ParseMode: models.ParseModeHTML,
 	})
 	if err != nil {
 		// if bot blocked or chat deleted
