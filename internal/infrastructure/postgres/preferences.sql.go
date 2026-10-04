@@ -8,6 +8,7 @@ package postgres
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -65,7 +66,8 @@ FROM users u
 JOIN preferences p ON u.id = p.user_id
 WHERE p.digest_enabled = true
   AND p.delivery_time IS NOT NULL
-  AND p.delivery_time = CURRENT_TIME(0)
+  AND p.delivery_time > date_trunc('minute', NOW() AT TIME ZONE 'UTC')::time - INTERVAL '1 minute'
+  AND p.delivery_time <= date_trunc('minute', NOW() AT TIME ZONE 'UTC')::time
 `
 
 type ListUsersForDeliveryRow struct {
@@ -73,6 +75,7 @@ type ListUsersForDeliveryRow struct {
 	AptGroups  []string
 }
 
+// half-open window: a late tick still lands, but each time stays due once
 func (q *Queries) ListUsersForDelivery(ctx context.Context) ([]ListUsersForDeliveryRow, error) {
 	rows, err := q.db.Query(ctx, listUsersForDelivery)
 	if err != nil {
@@ -93,34 +96,35 @@ func (q *Queries) ListUsersForDelivery(ctx context.Context) ([]ListUsersForDeliv
 	return items, nil
 }
 
-const updatePreferences = `-- name: UpdatePreferences :one
+const updateAptGroupsOnly = `-- name: UpdateAptGroupsOnly :execresult
 UPDATE preferences
-SET apt_groups = $2, digest_enabled = $3, delivery_time = $4
+SET apt_groups = $2
 WHERE user_id = $1
-RETURNING id, user_id, apt_groups, digest_enabled, delivery_time
 `
 
-type UpdatePreferencesParams struct {
-	UserID        int64
-	AptGroups     []string
-	DigestEnabled bool
-	DeliveryTime  pgtype.Time
+type UpdateAptGroupsOnlyParams struct {
+	UserID    int64
+	AptGroups []string
 }
 
-func (q *Queries) UpdatePreferences(ctx context.Context, arg UpdatePreferencesParams) (Preference, error) {
-	row := q.db.QueryRow(ctx, updatePreferences,
-		arg.UserID,
-		arg.AptGroups,
-		arg.DigestEnabled,
-		arg.DeliveryTime,
-	)
-	var i Preference
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.AptGroups,
-		&i.DigestEnabled,
-		&i.DeliveryTime,
-	)
-	return i, err
+func (q *Queries) UpdateAptGroupsOnly(ctx context.Context, arg UpdateAptGroupsOnlyParams) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, updateAptGroupsOnly, arg.UserID, arg.AptGroups)
+}
+
+const updateDigestSettings = `-- name: UpdateDigestSettings :execresult
+UPDATE preferences
+SET digest_enabled = COALESCE($1::boolean, digest_enabled),
+    delivery_time = COALESCE($2::time, delivery_time)
+WHERE user_id = $3
+`
+
+type UpdateDigestSettingsParams struct {
+	Enabled      pgtype.Bool
+	DeliveryTime pgtype.Time
+	UserID       int64
+}
+
+// null arguments leave their column untouched
+func (q *Queries) UpdateDigestSettings(ctx context.Context, arg UpdateDigestSettingsParams) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, updateDigestSettings, arg.Enabled, arg.DeliveryTime, arg.UserID)
 }

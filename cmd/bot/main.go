@@ -3,79 +3,43 @@ package main
 import (
 	"context"
 	"log"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/go-telegram/bot"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"golang.org/x/net/proxy"
 
 	"github.com/yarburart/str3k0za-radar/internal/application"
+	"github.com/yarburart/str3k0za-radar/internal/bootstrap"
 	"github.com/yarburart/str3k0za-radar/internal/handler"
-	"github.com/yarburart/str3k0za-radar/internal/infrastructure/cwe"
-	"github.com/yarburart/str3k0za-radar/internal/infrastructure/mitre"
 	"github.com/yarburart/str3k0za-radar/internal/infrastructure/postgres"
 )
 
-// test bot echo
 func main() {
-	// modern GDPR problems need modern sollutions, bad opsec btw
-	dialer, err := proxy.SOCKS5("tcp", "127.0.0.1:9050", nil, proxy.Direct)
-	if err != nil {
-		log.Fatalf("failed to create SOCKS5 proxy dialer: %v", err)
-	}
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialer.(proxy.ContextDialer).DialContext(ctx, network, addr)
-		},
-	}
-	httpClient := &http.Client{
-		Transport: transport,
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	// WithHTTPClient for proxy in censored countries
-	opts := []bot.Option{
-		bot.WithHTTPClient(15*time.Second, httpClient),
-	}
-	botToken := os.Getenv("BOT_TOKEN")
-	if botToken == "" {
-		log.Fatal("BOT_TOKEN env var is not set for current process")
-	}
-	b, err := bot.New(botToken, opts...)
+	b, err := bootstrap.Bot()
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	pool, err := pgxpool.New(ctx, os.Getenv("DB_URL"))
+	pool, err := bootstrap.Pool(ctx)
 	if err != nil {
-		log.Fatalf("cant connect to db: %v\n", err)
+		log.Fatal(err)
 	}
 	defer pool.Close()
 	userRepo := postgres.NewUserRepository(pool)
 
-	loader := mitre.NewLoader(
-		"data/enterprise-attack.json",
-		"data/threat-groups.json",
-	)
-	attackGraph, err := loader.Load()
+	attackGraph, cweData, err := bootstrap.KnowledgeBase()
 	if err != nil {
-		log.Fatalf("failed to load attack graph: %v", err)
-	}
-	log.Printf("Attack graph loaded: %d APTs, %d TTPs", len(attackGraph.APTs), len(attackGraph.TTPs))
-	_, cweData, err := cwe.LoadCWEdata("data/cwe-1000.csv")
-	if err != nil {
-		log.Fatalf("failed to load cwe dataset: %v", err)
+		log.Fatal(err)
 	}
 
-	userProfileService := application.NewUserService(userRepo, attackGraph)
-	digestGenService := application.NewDigestService(userRepo, attackGraph, cweData)
-	router := handler.NewRouter(b, userProfileService, digestGenService)
+	router := handler.NewRouter(
+		b,
+		application.NewUserService(userRepo, attackGraph),
+		application.NewDigestService(userRepo, attackGraph, cweData),
+	)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypeExact, router.EchoFallback)
 
 	b.Start(ctx)

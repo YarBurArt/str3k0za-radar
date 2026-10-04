@@ -16,7 +16,6 @@ import (
 
 var ErrNotFound = errors.New("entity not found")
 
-// digest scheduler backup
 type DeliveryTarget struct {
 	TelegramID int64
 	APTGroups  []string
@@ -80,8 +79,8 @@ func (r *UserRepository) CreateUser(ctx context.Context, telegramID int64, usern
 	_, err = qtx.CreatePreferences(ctx, CreatePreferencesParams{
 		UserID:        sqlcUser.ID,
 		AptGroups:     []string{},
-		DigestEnabled: false,                     // enable by /enable-digest
-		DeliveryTime:  pgtype.Time{Valid: false}, // NULL by default
+		DigestEnabled: false,                     // enable by /enable
+		DeliveryTime:  pgtype.Time{Valid: false}, // NULL until /settime or /enable default
 	})
 	if err != nil {
 		return domain.User{}, fmt.Errorf("create preferences: %w", err)
@@ -96,45 +95,64 @@ func (r *UserRepository) CreateUser(ctx context.Context, telegramID int64, usern
 		TelegramID: sqlcUser.TelegramID,
 		Username:   sqlcUser.Username.String,
 		Prefs: domain.Preferences{
-			APTGroups:     []string{},
-			DigestEnabled: false,
-			DeliveryTime:  domain.TimeOfDay{},
+			APTGroups:       []string{},
+			DigestEnabled:   false,
+			DeliveryTime:    domain.TimeOfDay{},
+			HasDeliveryTime: false,
 		},
 	}, nil
 }
 
-// updates APT filter preferences for an existing user
-func (r *UserRepository) UpdatePreferences(ctx context.Context, telegramID int64, prefs domain.Preferences) (domain.Preferences, error) {
-	user, err := r.q.GetUserByTelegramID(ctx, telegramID)
+// a filter edit must not reset the digest schedule
+func (r *UserRepository) UpdateAptGroupsOnly(ctx context.Context, telegramID int64, groups []string) error {
+	userID, err := r.userIDByTelegramID(ctx, telegramID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Preferences{}, ErrNotFound
-		}
-		return domain.Preferences{}, fmt.Errorf("get user: %w", err)
+		return err
 	}
-
-	groups := prefs.APTGroups
 	if groups == nil {
 		groups = []string{}
 	}
-
-	sqlcPrefs, err := r.q.UpdatePreferences(ctx, UpdatePreferencesParams{
-		UserID:        user.ID,
-		AptGroups:     groups,
-		DigestEnabled: prefs.DigestEnabled,
-		DeliveryTime:  toSQLTime(prefs.DeliveryTime),
-	})
-	if err != nil {
-		return domain.Preferences{}, fmt.Errorf("update preferences: %w", err)
+	if _, err := r.q.UpdateAptGroupsOnly(ctx, UpdateAptGroupsOnlyParams{
+		UserID:    userID,
+		AptGroups: groups,
+	}); err != nil {
+		return fmt.Errorf("update apt groups: %w", err)
 	}
-	domainPrefs, err := mapToDomainPrefs(sqlcPrefs)
-	if err != nil {
-		return domain.Preferences{}, fmt.Errorf("digest prefs time conversion: %w", err)
-	}
-	return domainPrefs, nil
+	return nil
 }
 
-// who are eligible for a digest right now, river backup
+// nil pointers fall through COALESCE, so one statement covers all three commands
+func (r *UserRepository) UpdateDigestSettings(ctx context.Context, telegramID int64, enabled *bool, deliveryTime *domain.TimeOfDay) error {
+	userID, err := r.userIDByTelegramID(ctx, telegramID)
+	if err != nil {
+		return err
+	}
+
+	params := UpdateDigestSettingsParams{UserID: userID}
+	if enabled != nil {
+		params.Enabled = pgtype.Bool{Bool: *enabled, Valid: true}
+	}
+	if deliveryTime != nil {
+		params.DeliveryTime = toSQLTime(*deliveryTime)
+	}
+
+	if _, err := r.q.UpdateDigestSettings(ctx, params); err != nil {
+		return fmt.Errorf("update digest settings: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) userIDByTelegramID(ctx context.Context, telegramID int64) (int64, error) {
+	user, err := r.q.GetUserByTelegramID(ctx, telegramID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, fmt.Errorf("get user: %w", err)
+	}
+	return user.ID, nil
+}
+
 func (r *UserRepository) ListUsersForDelivery(ctx context.Context) ([]DeliveryTarget, error) {
 	rows, err := r.q.ListUsersForDelivery(ctx)
 	if err != nil {
@@ -180,9 +198,10 @@ func mapToDomainPrefs(p Preference) (domain.Preferences, error) {
 		return domain.Preferences{}, fmt.Errorf("convert delivery time: %w", err)
 	}
 	return domain.Preferences{
-		APTGroups:     groups,
-		DigestEnabled: p.DigestEnabled,
-		DeliveryTime:  dtime,
+		APTGroups:       groups,
+		DigestEnabled:   p.DigestEnabled,
+		DeliveryTime:    dtime,
+		HasDeliveryTime: p.DeliveryTime.Valid,
 	}, nil
 }
 

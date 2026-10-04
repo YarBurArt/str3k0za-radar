@@ -72,12 +72,13 @@ func (r *Router) EnableDigest(ctx context.Context, b *bot.Bot, update *models.Up
 		return
 	}
 	enabled := true
-	err := r.userService.UpdateDigestSettings(ctx, update.Message.Chat.ID, &enabled, nil)
+	deliveryTime, err := r.userService.UpdateDigestSettings(ctx, update.Message.Chat.ID, &enabled, nil)
 
-	msg := "Daily digest enabled."
+	msg := "Failed to enable digest."
 	if err != nil {
-		msg = "Failed to enable digest."
 		log.Printf("enable digest error: %v", err)
+	} else {
+		msg = fmt.Sprintf("Daily digest enabled on %02d:%02d. Change with /settime HH:MM", deliveryTime.Hour, deliveryTime.Minute)
 	}
 
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
@@ -91,17 +92,18 @@ func (r *Router) DisableDigest(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 	enabled := false
-	err := r.userService.UpdateDigestSettings(ctx, update.Message.Chat.ID, &enabled, nil)
-
-	msg := "Daily digest disabled."
-	if err != nil {
-		msg = "Failed to disable digest."
+	if _, err := r.userService.UpdateDigestSettings(ctx, update.Message.Chat.ID, &enabled, nil); err != nil {
 		log.Printf("disable digest error: %v", err)
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "Failed to disable digest, sorry",
+		})
+		return
 	}
 
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   msg,
+		Text:   "Daily digest disabled.",
 	})
 }
 
@@ -148,8 +150,7 @@ func (r *Router) SetTime(ctx context.Context, b *bot.Bot, update *models.Update)
 		return
 	}
 
-	err = r.userService.UpdateDigestSettings(ctx, update.Message.Chat.ID, nil, &deliveryTime)
-	if err != nil {
+	if _, err := r.userService.UpdateDigestSettings(ctx, update.Message.Chat.ID, nil, &deliveryTime); err != nil {
 		log.Printf("set time error: %v", err)
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,

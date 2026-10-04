@@ -104,47 +104,16 @@ func (s *UserService) GetAvailableCountries(ctx context.Context) []string {
 	return result
 }
 
-func (s *UserService) UpdatePreferences(ctx context.Context, telegramID int64, prefs domain.Preferences) (domain.User, error) {
-	_, err := s.userRepo.GetUserByTelegramID(ctx, telegramID)
-	if err != nil {
-		return domain.User{}, fmt.Errorf("idk this user: %w", err)
-	}
-	updatedPrefs, err := s.userRepo.UpdatePreferences(ctx, telegramID, prefs)
-	if err != nil {
-		return domain.User{}, fmt.Errorf("failed to update preferences: %w", err)
-	}
-	return domain.User{
-		TelegramID: telegramID,
-		Prefs:      updatedPrefs,
-	}, nil
-}
-
 func (s *UserService) UpdateAPTGroups(ctx context.Context, telegramID int64, selectedAPTIDs []string) error {
-	_, err := s.userRepo.GetUserByTelegramID(ctx, telegramID)
-	if err != nil {
-		return fmt.Errorf("user not found: %w", err)
-	}
-
 	// empty slice for consistent unmarshaling
 	if selectedAPTIDs == nil {
 		selectedAPTIDs = []string{}
 	}
-
-	prefs := domain.Preferences{
-		APTGroups: selectedAPTIDs,
-		// preventing accidental overwrite of digest_en/time settings
-	}
-
-	_, err = s.userRepo.UpdatePreferences(ctx, telegramID, prefs)
-	return err
+	// a filter edit must not reset the digest schedule
+	return s.userRepo.UpdateAptGroupsOnly(ctx, telegramID, selectedAPTIDs)
 }
 
 func (s *UserService) UpdateCountries(ctx context.Context, telegramID int64, selectedCountries []string) error {
-	_, err := s.userRepo.GetUserByTelegramID(ctx, telegramID)
-	if err != nil {
-		return fmt.Errorf("user not found: %w", err)
-	}
-
 	var resolvedAPTIDs []string
 	if s.graph != nil && len(selectedCountries) > 0 {
 		countrySet := make(map[string]struct{})
@@ -162,30 +131,34 @@ func (s *UserService) UpdateCountries(ctx context.Context, telegramID int64, sel
 		}
 	}
 
-	prefs := domain.Preferences{
-		APTGroups: resolvedAPTIDs,
-	}
-
-	_, err = s.userRepo.UpdatePreferences(ctx, telegramID, prefs)
-	return err
+	// a filter edit must not reset the digest schedule
+	return s.userRepo.UpdateAptGroupsOnly(ctx, telegramID, resolvedAPTIDs)
 }
 
-// only the specified digest fields, like preserving APT groups
-func (s *UserService) UpdateDigestSettings(ctx context.Context, telegramID int64, enabled *bool, deliveryTime *domain.TimeOfDay) error {
+// returns the time now in effect so /enable can confirm it without a re-read
+func (s *UserService) UpdateDigestSettings(ctx context.Context, telegramID int64, enabled *bool, deliveryTime *domain.TimeOfDay) (domain.TimeOfDay, error) {
 	user, err := s.userRepo.GetUserByTelegramID(ctx, telegramID)
 	if err != nil {
-		return fmt.Errorf("user not found: %w", err)
+		return domain.TimeOfDay{}, fmt.Errorf("user not found: %w", err)
 	}
 
-	if enabled != nil {
-		user.Prefs.DigestEnabled = *enabled
-	}
-	if deliveryTime != nil {
-		user.Prefs.DeliveryTime = *deliveryTime
+	if enabled == nil && deliveryTime == nil {
+		return user.Prefs.DeliveryTime, nil
 	}
 
-	_, err = s.userRepo.UpdatePreferences(ctx, telegramID, user.Prefs)
-	return err
+	effective := user.Prefs.DeliveryTime
+	switch {
+	case deliveryTime != nil:
+		effective = *deliveryTime
+	case *enabled && !user.Prefs.HasDeliveryTime:
+		// otherwise never be scheduled
+		effective = domain.DefaultDeliveryTime()
+	}
+
+	if err := s.userRepo.UpdateDigestSettings(ctx, telegramID, enabled, &effective); err != nil {
+		return domain.TimeOfDay{}, err
+	}
+	return effective, nil
 }
 
 // just wrapper for layer
